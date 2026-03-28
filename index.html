@@ -3,26 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebAR Studio – własny model 3D i tekstury</title>
-    <!-- Biblioteki CDN -->
+    <title>WebAR Studio – własny model i tekstura</title>
+    <!-- A-Frame + AR.js -->
     <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.0/dist/aframe-master.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ar.js@3.0.2/aframe/build/aframe-ar.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-        }
         body {
             margin: 0;
             overflow: hidden;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Segoe UI', system-ui, sans-serif;
         }
-        /* Panel sterowania – nakładka na scenę */
+        /* Panel sterowania - zawsze na wierzchu */
         .ui-panel {
             position: fixed;
             bottom: 20px;
             left: 20px;
             right: 20px;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.85);
             backdrop-filter: blur(12px);
             border-radius: 24px;
             padding: 16px;
@@ -35,26 +32,23 @@
             align-items: center;
             pointer-events: auto;
             border: 1px solid rgba(255,255,255,0.2);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-size: 14px;
         }
         .ui-panel button, .ui-panel label {
             background: #2c3e66;
             border: none;
             color: white;
-            padding: 10px 18px;
+            padding: 10px 16px;
             border-radius: 40px;
-            font-size: 14px;
             font-weight: 500;
             cursor: pointer;
             transition: 0.2s;
             text-align: center;
-            backdrop-filter: blur(4px);
         }
         .ui-panel button:hover, .ui-panel label:hover {
             background: #1e2a47;
-            transform: scale(0.97);
         }
-        .ui-panel .file-label {
+        .file-label {
             background: #4a627a;
             display: inline-block;
         }
@@ -62,19 +56,17 @@
             display: none;
         }
         .status {
-            font-size: 13px;
             background: #000000aa;
-            padding: 6px 12px;
+            padding: 8px 14px;
             border-radius: 40px;
             flex: 1;
-            min-width: 140px;
+            min-width: 160px;
             text-align: center;
+            font-size: 13px;
         }
         .close-panel {
             background: #aa2e2e;
-            padding: 6px 12px;
         }
-        /* Mały komunikat o markerze */
         .marker-tip {
             position: fixed;
             top: 20px;
@@ -89,26 +81,22 @@
         }
         @media (max-width: 600px) {
             .ui-panel { flex-direction: column; align-items: stretch; bottom: 10px; left: 10px; right: 10px; }
-            .ui-panel button, .ui-panel label { text-align: center; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Scena AR – początkowo ukryta, uruchamiana po zezwoleniu na kamerę -->
+    <!-- Scena AR – widoczna od razu, ale kamera nie jest jeszcze aktywna -->
     <a-scene 
         id="arScene"
-        embedded 
+        embedded
         arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         renderer="antialias: true; alpha: false;"
-        vr-mode-ui="enabled: false"
-        style="visibility: hidden;">   <!-- ukryta do czasu akceptacji kamery -->
+        vr-mode-ui="enabled: false">
         
-        <!-- Kamera jest automatycznie zarządzana przez AR.js -->
-        
-        <!-- Marker Hiro – tutaj dynamicznie będziemy wstawiać model -->
+        <!-- Marker HIRO -->
         <a-marker id="hiroMarker" preset="hiro">
-            <!-- Domyślny placeholder: sześcian, który zostanie zastąpiony -->
+            <!-- Domyślny model: obracający się sześcian -->
             <a-box id="defaultModel" position="0 0.5 0" color="#FF5722" scale="0.6 0.6 0.6"
                    animation="property: rotation; to: 0 360 0; dur: 4000; loop: true; easing: linear;">
                 <a-material color="#FF5722" emissive="#442200" emissive-intensity="0.3"></a-material>
@@ -131,11 +119,11 @@
             <input type="file" id="modelFile" accept=".glb,.gltf">
         </label>
         <label class="file-label">
-            🖼️ Tekstura (jpg/png) – nałożona na model
+            🖼️ Tekstura (jpg/png)
             <input type="file" id="textureFile" accept="image/jpeg,image/png">
         </label>
-        <button id="resetModelBtn" style="background:#3a6b4b;">⟳ Przywróć domyślny model</button>
-        <div class="status" id="statusMsg">✅ Gotowy – wciśnij "Uruchom kamerę"</div>
+        <button id="resetModelBtn" style="background:#3a6b4b;">⟳ Przywróć domyślny</button>
+        <div class="status" id="statusMsg">✅ Gotowy – kliknij „Uruchom kamerę”</div>
         <button class="close-panel" id="hidePanelBtn">✖ Ukryj panel</button>
     </div>
     <div class="marker-tip">
@@ -144,7 +132,7 @@
 
     <script>
         (function() {
-            // Referencje do elementów DOM
+            // Elementy DOM
             const scene = document.getElementById('arScene');
             const marker = document.getElementById('hiroMarker');
             const startBtn = document.getElementById('startCameraBtn');
@@ -154,36 +142,32 @@
             const statusDiv = document.getElementById('statusMsg');
             const hidePanelBtn = document.getElementById('hidePanelBtn');
             
-            let currentModelEntity = null;      // aktualny obiekt modelu (a-entity)
-            let currentTextureUrl = null;       // URL wczytanej tekstury
+            let currentModelEntity = null;
+            let currentTextureUrl = null;
             
-            // Funkcja aktualizująca status w UI
             function setStatus(msg, isError = false) {
                 statusDiv.textContent = msg;
                 statusDiv.style.background = isError ? '#aa2e2eaa' : '#000000aa';
                 console.log(`[Status] ${msg}`);
             }
             
-            // Usuwanie obecnego modelu (oprócz domyślnego placeholdera)
             function removeCurrentModel() {
                 if (currentModelEntity && currentModelEntity.parentNode === marker) {
                     marker.removeChild(currentModelEntity);
                     currentModelEntity = null;
                 }
-                // Pokaż domyślny model (sześcian) jeśli istnieje
                 const defaultModel = document.getElementById('defaultModel');
                 if (defaultModel && defaultModel.parentNode !== marker) {
                     marker.appendChild(defaultModel);
-                } else if (defaultModel && defaultModel.parentNode === marker) {
+                } else if (defaultModel) {
                     defaultModel.setAttribute('visible', 'true');
                 }
             }
             
-            // Funkcja tworząca nowy model 3D z pliku .glb/.gltf
+            // Wczytywanie modelu z pliku
             function loadModelFromFile(file) {
                 return new Promise((resolve, reject) => {
                     const url = URL.createObjectURL(file);
-                    // Tworzymy tymczasowy element do sprawdzenia
                     const testEntity = document.createElement('a-entity');
                     testEntity.setAttribute('gltf-model', url);
                     testEntity.addEventListener('model-loaded', () => {
@@ -193,29 +177,20 @@
                         URL.revokeObjectURL(url);
                         reject(err);
                     });
-                    // Ładujemy model w tle (nie dodajemy do sceny)
                     scene.appendChild(testEntity);
-                    // po załadowaniu usuwamy testowy (potem utworzymy właściwy)
                     setTimeout(() => {
                         if (testEntity.parentNode) scene.removeChild(testEntity);
                     }, 100);
                 });
             }
             
-            // Zastosowanie tekstury na aktywnym modelu (jeśli model obsługuje materiał)
             function applyTextureToModel(textureUrl, modelEntity) {
                 if (!modelEntity) return;
-                // Szukamy komponentu material w dzieciach modelu lub w samym modelu
-                // Dla prostoty: jeśli model to a-box lub a-sphere, możemy ustawić materiał.
-                // Dla modeli .glb – trzeba by dostać się do materiałów, co jest bardziej złożone.
-                // Implementujemy dla przypadku, gdy użytkownik używa domyślnego a-box lub dodaje prostą geometrię.
-                // Dla zewnętrznych .glb – opcjonalnie można spróbować ustawić teksturę przez JS, ale wymaga dostępu do THREE.
-                // Dla uproszczenia – dodajemy informację, że dla własnych modeli tekstura może wymagać dodatkowej konfiguracji.
+                // Spróbuj ustawić materiał na encji głównej lub dzieciach
                 if (modelEntity.components && modelEntity.components.material) {
                     modelEntity.setAttribute('material', `src: ${textureUrl}; repeat: 1 1;`);
-                    setStatus('✅ Tekstura nałożona na model (jeśli obsługuje materiał)');
+                    setStatus('✅ Tekstura nałożona');
                 } else {
-                    // Próbujemy znaleźć potomne elementy z materiałem
                     const children = modelEntity.querySelectorAll('[material]');
                     if (children.length) {
                         children.forEach(child => {
@@ -223,50 +198,43 @@
                         });
                         setStatus('✅ Tekstura nałożona na elementy modelu');
                     } else {
-                        setStatus('⚠️ Tekstura nie została nałożona – model nie obsługuje prostego materiału. Spróbuj użyć domyślnego modelu.', false);
+                        setStatus('⚠️ Tekstura nie została nałożona – model nie obsługuje prostego materiału', false);
                     }
                 }
             }
             
-            // Główna funkcja podmiany modelu na markerze
             async function replaceModelWithFile(file) {
                 if (!file) return;
-                setStatus(`⏳ Wczytywanie modelu: ${file.name}...`);
+                setStatus(`⏳ Wczytywanie: ${file.name}...`);
                 try {
                     const { url, entity } = await loadModelFromFile(file);
-                    // Tworzymy właściwą encję do wstawienia
                     const newModel = document.createElement('a-entity');
                     newModel.setAttribute('gltf-model', url);
                     newModel.setAttribute('scale', '0.5 0.5 0.5');
                     newModel.setAttribute('position', '0 0 0');
                     newModel.setAttribute('animation', 'property: rotation; to: 0 360 0; dur: 5000; loop: true; easing: linear;');
                     
-                    // Dodajemy event listener po załadowaniu modelu
                     newModel.addEventListener('model-loaded', () => {
-                        setStatus(`✅ Model ${file.name} wczytany i widoczny nad markerem`);
-                        // Jeśli mamy wcześniej wczytaną teksturę, spróbuj nałożyć
+                        setStatus(`✅ Model ${file.name} wczytany`);
                         if (currentTextureUrl) {
                             applyTextureToModel(currentTextureUrl, newModel);
                         }
                         URL.revokeObjectURL(url);
                     });
                     newModel.addEventListener('model-error', () => {
-                        setStatus(`❌ Błąd ładowania modelu ${file.name}`, true);
+                        setStatus(`❌ Błąd modelu ${file.name}`, true);
                         URL.revokeObjectURL(url);
                     });
                     
-                    // Usuń stary model i domyślny
                     removeCurrentModel();
-                    // Dodaj nowy model do markera
                     marker.appendChild(newModel);
                     currentModelEntity = newModel;
                 } catch (err) {
-                    console.error(err);
-                    setStatus(`❌ Nie udało się wczytać modelu: ${err.message}`, true);
+                    setStatus(`❌ Błąd: ${err.message}`, true);
                 }
             }
             
-            // Obsługa wczytania tekstury
+            // Obsługa tekstury
             textureInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -275,72 +243,55 @@
                 if (currentModelEntity) {
                     applyTextureToModel(url, currentModelEntity);
                 } else {
-                    // Jeśli nie ma modelu, ale jest domyślny a-box – zastosuj teksturę na domyślnym
                     const defaultModel = document.getElementById('defaultModel');
                     if (defaultModel && defaultModel.parentNode === marker) {
                         defaultModel.setAttribute('material', `src: ${url}`);
-                        setStatus(`🖼️ Tekstura nałożona na domyślny model`);
+                        setStatus('🖼️ Tekstura nałożona na domyślny model');
                     } else {
-                        setStatus(`🖼️ Tekstura wczytana, pojawi się po załadowaniu modelu`);
+                        setStatus('🖼️ Tekstura wczytana – pojawi się po załadowaniu modelu');
                     }
                 }
             });
             
-            // Reset do domyślnego sześcianu
             resetBtn.addEventListener('click', () => {
                 removeCurrentModel();
                 if (currentTextureUrl && document.getElementById('defaultModel')) {
                     document.getElementById('defaultModel').setAttribute('material', `src: ${currentTextureUrl}`);
                 }
-                setStatus('🔄 Przywrócono domyślny model (sześcian)');
+                setStatus('🔄 Przywrócono domyślny model');
             });
             
-            // Uruchomienie kamery – wymaga interakcji użytkownika
+            // Uruchomienie kamery – wymagane gestem użytkownika
             startBtn.addEventListener('click', async () => {
                 setStatus('⏳ Prośba o dostęp do kamery...');
                 try {
-                    // Prośba o dostęp do kamery (standardowa)
                     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    stream.getTracks().forEach(track => track.stop()); // tylko do uzyskania pozwolenia
-                    // Pokaż scenę AR (wcześniej ukryta)
-                    scene.style.visibility = 'visible';
-                    setStatus('📷 Kamera aktywna. Skieruj telefon na marker HIRO.');
-                    // Opcjonalnie: wywołaj restart AR.js, aby odświeżyć strumień
+                    stream.getTracks().forEach(track => track.stop()); // samo pozwolenie
+                    // Ponownie uruchom AR.js (jeśli potrzebuje restartu)
                     if (scene.components && scene.components.arjs) {
                         scene.components.arjs.restart();
                     }
+                    setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
                 } catch (err) {
                     console.error(err);
                     setStatus('❌ Brak dostępu do kamery. Sprawdź uprawnienia i HTTPS.', true);
-                    scene.style.visibility = 'hidden';
                 }
             });
             
-            // Obsługa wgranego modelu
             modelInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
-                if (file) {
-                    replaceModelWithFile(file);
-                }
+                if (file) replaceModelWithFile(file);
             });
             
-            // Ukrywanie panelu (można przywrócić odświeżając stronę)
             hidePanelBtn.addEventListener('click', () => {
-                const panel = document.querySelector('.ui-panel');
-                if (panel) panel.style.display = 'none';
+                document.querySelector('.ui-panel').style.display = 'none';
                 setStatus('Panel ukryty (odśwież stronę, aby przywrócić)');
             });
             
-            // Mała pomoc: jeśli strona jest otwarta przez HTTPS, od razu pokażemy prośbę o kamerę?
-            // Nie, czekamy na kliknięcie – zgodnie z wymaganiami przeglądarki.
-            
-            // Komunikat o konieczności HTTPS
+            // Komunikat o HTTPS
             if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
                 setStatus('⚠️ UWAGA: Aplikacja wymaga HTTPS. Użyj GitHub Pages lub serwera z SSL.', true);
             }
-            
-            // Domyślnie ukryj scenę do momentu przyznania kamery
-            scene.style.visibility = 'hidden';
         })();
     </script>
 </body>
