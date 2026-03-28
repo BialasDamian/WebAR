@@ -3,17 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebAR Studio – własny model i tekstura</title>
-    <!-- A-Frame + AR.js -->
+    <title>WebAR Studio – Marker HIRO z własnym modelem</title>
+    <!-- A-Frame i AR.js -->
     <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.0/dist/aframe-master.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ar.js@3.0.2/aframe/build/aframe-ar.js"></script>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: 'Segoe UI', system-ui, sans-serif;
-        }
-        /* Panel sterowania - zawsze na wierzchu */
+        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
         .ui-panel {
             position: fixed;
             bottom: 20px;
@@ -45,16 +40,9 @@
             transition: 0.2s;
             text-align: center;
         }
-        .ui-panel button:hover, .ui-panel label:hover {
-            background: #1e2a47;
-        }
-        .file-label {
-            background: #4a627a;
-            display: inline-block;
-        }
-        input[type="file"] {
-            display: none;
-        }
+        .ui-panel button:hover, .ui-panel label:hover { background: #1e2a47; }
+        .file-label { background: #4a627a; display: inline-block; }
+        input[type="file"] { display: none; }
         .status {
             background: #000000aa;
             padding: 8px 14px;
@@ -64,9 +52,7 @@
             text-align: center;
             font-size: 13px;
         }
-        .close-panel {
-            background: #aa2e2e;
-        }
+        .close-panel { background: #aa2e2e; }
         .marker-tip {
             position: fixed;
             top: 20px;
@@ -86,32 +72,19 @@
 </head>
 <body>
 
-    <!-- Scena AR – widoczna od razu, ale kamera nie jest jeszcze aktywna -->
-    <a-scene 
-        id="arScene"
-        embedded
-        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
-        renderer="antialias: true; alpha: false;"
-        vr-mode-ui="enabled: false">
-        
-        <!-- Marker HIRO -->
+    <a-scene id="arScene" embedded arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;" renderer="antialias: true; alpha: false;" vr-mode-ui="enabled: false">
         <a-marker id="hiroMarker" preset="hiro">
-            <!-- Domyślny model: obracający się sześcian -->
             <a-box id="defaultModel" position="0 0.5 0" color="#FF5722" scale="0.6 0.6 0.6"
                    animation="property: rotation; to: 0 360 0; dur: 4000; loop: true; easing: linear;">
                 <a-material color="#FF5722" emissive="#442200" emissive-intensity="0.3"></a-material>
             </a-box>
         </a-marker>
-        
-        <!-- Oświetlenie -->
         <a-light type="ambient" intensity="0.6"></a-light>
         <a-light type="directional" intensity="0.8" position="1 2 1"></a-light>
         <a-light type="directional" intensity="0.5" position="-1 1 -1"></a-light>
-        
         <a-entity camera></a-entity>
     </a-scene>
 
-    <!-- Panel UI -->
     <div class="ui-panel">
         <button id="startCameraBtn">📷 Uruchom kamerę</button>
         <label class="file-label">
@@ -126,13 +99,10 @@
         <div class="status" id="statusMsg">✅ Gotowy – kliknij „Uruchom kamerę”</div>
         <button class="close-panel" id="hidePanelBtn">✖ Ukryj panel</button>
     </div>
-    <div class="marker-tip">
-        🎯 Wskaż marker HIRO (wydrukuj go z AR.js)
-    </div>
+    <div class="marker-tip">🎯 Wskaż marker HIRO (wydrukuj go z AR.js)</div>
 
     <script>
         (function() {
-            // Elementy DOM
             const scene = document.getElementById('arScene');
             const marker = document.getElementById('hiroMarker');
             const startBtn = document.getElementById('startCameraBtn');
@@ -144,6 +114,7 @@
             
             let currentModelEntity = null;
             let currentTextureUrl = null;
+            let videoElement = null;   // element wideo AR.js
             
             function setStatus(msg, isError = false) {
                 statusDiv.textContent = msg;
@@ -151,6 +122,49 @@
                 console.log(`[Status] ${msg}`);
             }
             
+            // Znajdź element wideo utworzony przez AR.js
+            function findARVideo() {
+                // AR.js często dodaje wideo z klasą 'a-arjs-video'
+                let video = document.querySelector('video.a-arjs-video');
+                if (!video) video = document.querySelector('a-scene video');
+                return video;
+            }
+            
+            // Ręczne uruchomienie kamery i przekazanie strumienia do wideo AR.js
+            async function startCamera() {
+                setStatus('⏳ Prośba o dostęp do kamery...');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                    if (!videoElement) {
+                        videoElement = findARVideo();
+                    }
+                    if (videoElement) {
+                        videoElement.srcObject = stream;
+                        await videoElement.play();
+                        setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
+                    } else {
+                        // Jeśli wideo jeszcze nie istnieje, spróbuj ponownie po chwili
+                        setStatus('⚠️ Inicjalizacja wideo, proszę czekać...');
+                        setTimeout(() => {
+                            videoElement = findARVideo();
+                            if (videoElement && stream) {
+                                videoElement.srcObject = stream;
+                                videoElement.play();
+                                setStatus('📷 Kamera aktywna (opóźniona).');
+                            } else {
+                                setStatus('❌ Nie znaleziono wideo AR.js. Spróbuj odświeżyć.', true);
+                            }
+                        }, 500);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    setStatus('❌ Brak dostępu do kamery. Sprawdź uprawnienia i HTTPS.', true);
+                }
+            }
+            
+            startBtn.addEventListener('click', startCamera);
+            
+            // --- Obsługa modeli i tekstur ---
             function removeCurrentModel() {
                 if (currentModelEntity && currentModelEntity.parentNode === marker) {
                     marker.removeChild(currentModelEntity);
@@ -164,7 +178,6 @@
                 }
             }
             
-            // Wczytywanie modelu z pliku
             function loadModelFromFile(file) {
                 return new Promise((resolve, reject) => {
                     const url = URL.createObjectURL(file);
@@ -186,7 +199,6 @@
             
             function applyTextureToModel(textureUrl, modelEntity) {
                 if (!modelEntity) return;
-                // Spróbuj ustawić materiał na encji głównej lub dzieciach
                 if (modelEntity.components && modelEntity.components.material) {
                     modelEntity.setAttribute('material', `src: ${textureUrl}; repeat: 1 1;`);
                     setStatus('✅ Tekstura nałożona');
@@ -216,9 +228,7 @@
                     
                     newModel.addEventListener('model-loaded', () => {
                         setStatus(`✅ Model ${file.name} wczytany`);
-                        if (currentTextureUrl) {
-                            applyTextureToModel(currentTextureUrl, newModel);
-                        }
+                        if (currentTextureUrl) applyTextureToModel(currentTextureUrl, newModel);
                         URL.revokeObjectURL(url);
                     });
                     newModel.addEventListener('model-error', () => {
@@ -234,7 +244,6 @@
                 }
             }
             
-            // Obsługa tekstury
             textureInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -261,23 +270,6 @@
                 setStatus('🔄 Przywrócono domyślny model');
             });
             
-            // Uruchomienie kamery – wymagane gestem użytkownika
-            startBtn.addEventListener('click', async () => {
-                setStatus('⏳ Prośba o dostęp do kamery...');
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    stream.getTracks().forEach(track => track.stop()); // samo pozwolenie
-                    // Ponownie uruchom AR.js (jeśli potrzebuje restartu)
-                    if (scene.components && scene.components.arjs) {
-                        scene.components.arjs.restart();
-                    }
-                    setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
-                } catch (err) {
-                    console.error(err);
-                    setStatus('❌ Brak dostępu do kamery. Sprawdź uprawnienia i HTTPS.', true);
-                }
-            });
-            
             modelInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) replaceModelWithFile(file);
@@ -288,7 +280,16 @@
                 setStatus('Panel ukryty (odśwież stronę, aby przywrócić)');
             });
             
-            // Komunikat o HTTPS
+            // Po załadowaniu sceny spróbuj znaleźć wideo AR.js
+            scene.addEventListener('loaded', () => {
+                videoElement = findARVideo();
+                if (videoElement) {
+                    setStatus('✅ Scena AR gotowa. Kliknij przycisk, aby uruchomić kamerę.');
+                } else {
+                    setStatus('⚠️ Scena załadowana, ale brak wideo. Kliknij przycisk.');
+                }
+            });
+            
             if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
                 setStatus('⚠️ UWAGA: Aplikacja wymaga HTTPS. Użyj GitHub Pages lub serwera z SSL.', true);
             }
