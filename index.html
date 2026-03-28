@@ -3,18 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebAR Studio – Marker HIRO z własnym modelem</title>
-    <!-- A-Frame i AR.js -->
+    <title>WebAR – Marker HIRO z podglądem kamery</title>
     <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.0/dist/aframe-master.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ar.js@3.0.2/aframe/build/aframe-ar.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        /* Wymuszenie widoczności wideo AR.js jako tła */
+        .a-arjs-video {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            z-index: -1 !important;
+        }
+        /* Panel UI na wierzchu */
         .ui-panel {
             position: fixed;
             bottom: 20px;
             left: 20px;
             right: 20px;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.8);
             backdrop-filter: blur(12px);
             border-radius: 24px;
             padding: 16px;
@@ -40,9 +54,16 @@
             transition: 0.2s;
             text-align: center;
         }
-        .ui-panel button:hover, .ui-panel label:hover { background: #1e2a47; }
-        .file-label { background: #4a627a; display: inline-block; }
-        input[type="file"] { display: none; }
+        .ui-panel button:hover, .ui-panel label:hover {
+            background: #1e2a47;
+        }
+        .file-label {
+            background: #4a627a;
+            display: inline-block;
+        }
+        input[type="file"] {
+            display: none;
+        }
         .status {
             background: #000000aa;
             padding: 8px 14px;
@@ -52,7 +73,9 @@
             text-align: center;
             font-size: 13px;
         }
-        .close-panel { background: #aa2e2e; }
+        .close-panel {
+            background: #aa2e2e;
+        }
         .marker-tip {
             position: fixed;
             top: 20px;
@@ -66,23 +89,34 @@
             pointer-events: none;
         }
         @media (max-width: 600px) {
-            .ui-panel { flex-direction: column; align-items: stretch; bottom: 10px; left: 10px; right: 10px; }
+            .ui-panel {
+                flex-direction: column;
+                align-items: stretch;
+                bottom: 10px;
+                left: 10px;
+                right: 10px;
+            }
         }
     </style>
 </head>
 <body>
-
-    <a-scene id="arScene" embedded arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;" renderer="antialias: true; alpha: false;" vr-mode-ui="enabled: false">
+    <a-scene
+        id="arScene"
+        embedded
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        renderer="antialias: true; alpha: false;"
+        vr-mode-ui="enabled: false">
+        
         <a-marker id="hiroMarker" preset="hiro">
             <a-box id="defaultModel" position="0 0.5 0" color="#FF5722" scale="0.6 0.6 0.6"
                    animation="property: rotation; to: 0 360 0; dur: 4000; loop: true; easing: linear;">
                 <a-material color="#FF5722" emissive="#442200" emissive-intensity="0.3"></a-material>
             </a-box>
         </a-marker>
+        
         <a-light type="ambient" intensity="0.6"></a-light>
         <a-light type="directional" intensity="0.8" position="1 2 1"></a-light>
         <a-light type="directional" intensity="0.5" position="-1 1 -1"></a-light>
-        <a-entity camera></a-entity>
     </a-scene>
 
     <div class="ui-panel">
@@ -104,17 +138,17 @@
     <script>
         (function() {
             const scene = document.getElementById('arScene');
-            const marker = document.getElementById('hiroMarker');
             const startBtn = document.getElementById('startCameraBtn');
             const modelInput = document.getElementById('modelFile');
             const textureInput = document.getElementById('textureFile');
             const resetBtn = document.getElementById('resetModelBtn');
             const statusDiv = document.getElementById('statusMsg');
             const hidePanelBtn = document.getElementById('hidePanelBtn');
+            const marker = document.getElementById('hiroMarker');
             
             let currentModelEntity = null;
             let currentTextureUrl = null;
-            let videoElement = null;   // element wideo AR.js
+            let cameraStream = null;
             
             function setStatus(msg, isError = false) {
                 statusDiv.textContent = msg;
@@ -122,39 +156,40 @@
                 console.log(`[Status] ${msg}`);
             }
             
-            // Znajdź element wideo utworzony przez AR.js
-            function findARVideo() {
-                // AR.js często dodaje wideo z klasą 'a-arjs-video'
-                let video = document.querySelector('video.a-arjs-video');
-                if (!video) video = document.querySelector('a-scene video');
-                return video;
-            }
-            
-            // Ręczne uruchomienie kamery i przekazanie strumienia do wideo AR.js
             async function startCamera() {
                 setStatus('⏳ Prośba o dostęp do kamery...');
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                    if (!videoElement) {
-                        videoElement = findARVideo();
-                    }
+                    // Uzyskaj dostęp do kamery (preferuj tylną)
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { exact: "environment" } }
+                    }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
+                    cameraStream = stream;
+                    
+                    // Znajdź element wideo utworzony przez AR.js
+                    let videoElement = document.querySelector('video.a-arjs-video');
+                    if (!videoElement) videoElement = document.querySelector('a-scene video');
+                    
                     if (videoElement) {
                         videoElement.srcObject = stream;
                         await videoElement.play();
                         setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
+                        videoElement.style.display = 'block';
+                        videoElement.style.visibility = 'visible';
                     } else {
-                        // Jeśli wideo jeszcze nie istnieje, spróbuj ponownie po chwili
-                        setStatus('⚠️ Inicjalizacja wideo, proszę czekać...');
+                        setStatus('⚠️ Nie znaleziono wideo. Spróbuj ponownie za chwilę.', true);
                         setTimeout(() => {
-                            videoElement = findARVideo();
-                            if (videoElement && stream) {
-                                videoElement.srcObject = stream;
+                            videoElement = document.querySelector('video.a-arjs-video') || document.querySelector('a-scene video');
+                            if (videoElement && cameraStream) {
+                                videoElement.srcObject = cameraStream;
                                 videoElement.play();
-                                setStatus('📷 Kamera aktywna (opóźniona).');
-                            } else {
-                                setStatus('❌ Nie znaleziono wideo AR.js. Spróbuj odświeżyć.', true);
+                                setStatus('📷 Kamera uruchomiona (opóźnienie).');
                             }
                         }, 500);
+                    }
+                    
+                    // Restart AR.js aby rozpocząć detekcję
+                    if (scene.components && scene.components.arjs) {
+                        scene.components.arjs.restart();
                     }
                 } catch (err) {
                     console.error(err);
@@ -164,7 +199,7 @@
             
             startBtn.addEventListener('click', startCamera);
             
-            // --- Obsługa modeli i tekstur ---
+            // Obsługa modeli (bez zmian)
             function removeCurrentModel() {
                 if (currentModelEntity && currentModelEntity.parentNode === marker) {
                     marker.removeChild(currentModelEntity);
@@ -278,16 +313,6 @@
             hidePanelBtn.addEventListener('click', () => {
                 document.querySelector('.ui-panel').style.display = 'none';
                 setStatus('Panel ukryty (odśwież stronę, aby przywrócić)');
-            });
-            
-            // Po załadowaniu sceny spróbuj znaleźć wideo AR.js
-            scene.addEventListener('loaded', () => {
-                videoElement = findARVideo();
-                if (videoElement) {
-                    setStatus('✅ Scena AR gotowa. Kliknij przycisk, aby uruchomić kamerę.');
-                } else {
-                    setStatus('⚠️ Scena załadowana, ale brak wideo. Kliknij przycisk.');
-                }
             });
             
             if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
