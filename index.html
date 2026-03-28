@@ -148,7 +148,7 @@
             
             let currentModelEntity = null;
             let currentTextureUrl = null;
-            let cameraStream = null;
+            let cameraStarted = false;
             
             function setStatus(msg, isError = false) {
                 statusDiv.textContent = msg;
@@ -157,40 +157,33 @@
             }
             
             async function startCamera() {
+                if (cameraStarted) return;
                 setStatus('⏳ Prośba o dostęp do kamery...');
                 try {
-                    // Uzyskaj dostęp do kamery (preferuj tylną)
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: { exact: "environment" } }
-                    }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
-                    cameraStream = stream;
+                    // Najpierw prosimy o uprawnienia, aby mieć pewność, że kamera jest dostępna
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    stream.getTracks().forEach(track => track.stop()); // zatrzymujemy tymczasowo, AR.js przejmie
                     
-                    // Znajdź element wideo utworzony przez AR.js
-                    let videoElement = document.querySelector('video.a-arjs-video');
-                    if (!videoElement) videoElement = document.querySelector('a-scene video');
-                    
-                    if (videoElement) {
-                        videoElement.srcObject = stream;
-                        await videoElement.play();
-                        setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
-                        videoElement.style.display = 'block';
-                        videoElement.style.visibility = 'visible';
-                    } else {
-                        setStatus('⚠️ Nie znaleziono wideo. Spróbuj ponownie za chwilę.', true);
-                        setTimeout(() => {
-                            videoElement = document.querySelector('video.a-arjs-video') || document.querySelector('a-scene video');
-                            if (videoElement && cameraStream) {
-                                videoElement.srcObject = cameraStream;
-                                videoElement.play();
-                                setStatus('📷 Kamera uruchomiona (opóźnienie).');
-                            }
-                        }, 500);
-                    }
-                    
-                    // Restart AR.js aby rozpocząć detekcję
+                    // Teraz AR.js powinien automatycznie użyć kamery
+                    // Restartujemy komponent AR.js, aby rozpoczął strumień
                     if (scene.components && scene.components.arjs) {
                         scene.components.arjs.restart();
                     }
+                    
+                    cameraStarted = true;
+                    setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
+                    
+                    // Dodatkowo, upewniamy się, że wideo jest widoczne (choć AR.js powinien je utworzyć)
+                    setTimeout(() => {
+                        const video = document.querySelector('video.a-arjs-video');
+                        if (video) {
+                            video.style.display = 'block';
+                            video.style.visibility = 'visible';
+                            video.style.zIndex = '-1';
+                        } else {
+                            setStatus('⚠️ Uwaga: nie znaleziono wideo, ale detekcja może działać', false);
+                        }
+                    }, 1000);
                 } catch (err) {
                     console.error(err);
                     setStatus('❌ Brak dostępu do kamery. Sprawdź uprawnienia i HTTPS.', true);
