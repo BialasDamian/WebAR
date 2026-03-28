@@ -7,12 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.0/dist/aframe-master.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ar.js@3.0.2/aframe/build/aframe-ar.js"></script>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-        /* Wymuszenie widoczności wideo AR.js jako tła */
+        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
         .a-arjs-video {
             position: fixed !important;
             top: 0 !important;
@@ -53,16 +48,9 @@
             transition: 0.2s;
             text-align: center;
         }
-        .ui-panel button:hover, .ui-panel label:hover {
-            background: #1e2a47;
-        }
-        .file-label {
-            background: #4a627a;
-            display: inline-block;
-        }
-        input[type="file"] {
-            display: none;
-        }
+        .ui-panel button:hover, .ui-panel label:hover { background: #1e2a47; }
+        .file-label { background: #4a627a; display: inline-block; }
+        input[type="file"] { display: none; }
         .status {
             background: #000000aa;
             padding: 8px 14px;
@@ -72,9 +60,7 @@
             text-align: center;
             font-size: 13px;
         }
-        .close-panel {
-            background: #aa2e2e;
-        }
+        .close-panel { background: #aa2e2e; }
         .marker-tip {
             position: fixed;
             top: 20px;
@@ -88,13 +74,7 @@
             pointer-events: none;
         }
         @media (max-width: 600px) {
-            .ui-panel {
-                flex-direction: column;
-                align-items: stretch;
-                bottom: 10px;
-                left: 10px;
-                right: 10px;
-            }
+            .ui-panel { flex-direction: column; align-items: stretch; bottom: 10px; left: 10px; right: 10px; }
         }
     </style>
 </head>
@@ -147,7 +127,6 @@
             
             let currentModelEntity = null;
             let currentTextureUrl = null;
-            let cameraStream = null;
             
             function setStatus(msg, isError = false) {
                 statusDiv.textContent = msg;
@@ -158,61 +137,38 @@
             async function startCamera() {
                 setStatus('⏳ Prośba o dostęp do kamery...');
                 try {
-                    // Uzyskaj dostęp do kamery (preferuj tylną)
-                    cameraStream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: { exact: "environment" } }
-                    }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
+                    // Pobieramy strumień tylko po to, aby uzyskać uprawnienia, potem go zwalniamy
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    stream.getTracks().forEach(track => track.stop());
+                    setStatus('✅ Uprawnienia do kamery przyznane. Uruchamiam AR...');
                     
-                    setStatus('✅ Dostęp do kamery przyznany. Szukam elementu wideo...');
-                    
-                    // Funkcja do znajdowania elementu wideo utworzonego przez AR.js
-                    const findVideoElement = () => {
-                        return document.querySelector('video.a-arjs-video') || document.querySelector('a-scene video');
-                    };
-                    
-                    // Spróbuj znaleźć od razu, jeśli nie, użyj obserwatora
-                    let videoElement = findVideoElement();
-                    if (videoElement) {
-                        attachVideoStream(videoElement);
+                    // Restart AR.js – powinien teraz utworzyć wideo i użyć kamery
+                    if (scene.components && scene.components.arjs) {
+                        scene.components.arjs.restart();
                     } else {
-                        // Obserwuj zmiany w DOM, aby wykryć dodanie wideo
-                        const observer = new MutationObserver((mutations, obs) => {
-                            const video = findVideoElement();
-                            if (video) {
-                                obs.disconnect();
-                                attachVideoStream(video);
-                            }
-                        });
-                        observer.observe(document.body, { childList: true, subtree: true });
-                        // Fallback timeout
+                        setStatus('⚠️ Komponent AR.js nie gotowy, próbuję ponownie...');
                         setTimeout(() => {
-                            if (!videoElement) {
-                                observer.disconnect();
-                                const video = findVideoElement();
-                                if (video) attachVideoStream(video);
-                                else setStatus('❌ Nie znaleziono elementu wideo AR.js. Spróbuj odświeżyć stronę.', true);
-                            }
-                        }, 5000);
+                            if (scene.components && scene.components.arjs) scene.components.arjs.restart();
+                        }, 500);
                     }
+                    
+                    // Sprawdzamy pojawienie się wideo co 500ms
+                    let attempts = 0;
+                    const checkVideo = setInterval(() => {
+                        const video = document.querySelector('video.a-arjs-video') || document.querySelector('a-scene video');
+                        if (video && video.srcObject) {
+                            clearInterval(checkVideo);
+                            setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
+                        } else if (attempts > 20) {
+                            clearInterval(checkVideo);
+                            setStatus('⚠️ Nie udało się uruchomić wideo. Sprawdź konsolę.', true);
+                        }
+                        attempts++;
+                    }, 500);
                 } catch (err) {
                     console.error(err);
                     setStatus('❌ Brak dostępu do kamery. Sprawdź uprawnienia i HTTPS.', true);
                 }
-            }
-            
-            function attachVideoStream(videoElement) {
-                if (!cameraStream) return;
-                videoElement.srcObject = cameraStream;
-                videoElement.play().then(() => {
-                    setStatus('📷 Kamera aktywna. Skieruj na marker HIRO.');
-                    // Restart AR.js, aby rozpoczął detekcję
-                    if (scene.components && scene.components.arjs) {
-                        scene.components.arjs.restart();
-                    }
-                }).catch(err => {
-                    console.error('Błąd odtwarzania wideo:', err);
-                    setStatus('⚠️ Błąd odtwarzania wideo. Spróbuj ponownie.', true);
-                });
             }
             
             startBtn.addEventListener('click', startCamera);
